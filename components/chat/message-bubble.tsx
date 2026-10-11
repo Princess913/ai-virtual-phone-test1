@@ -2297,7 +2297,8 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
 const text = msg.mediaData?.label || "语音消息";
 const bilingual = splitBilingualText(text);
 const authoredSpeech = msg.mediaData?.speechText;
-const speechText = authoredSpeech || bilingual?.original || text;
+const authoredBilingual = authoredSpeech ? splitBilingualText(authoredSpeech) : null;
+const speechText = authoredBilingual?.original || authoredSpeech || bilingual?.original || text;
     const synthesizedFromText = msg.mediaData?.synthesizedFromText;
     const needsResynthesis = msg.role !== "user" && synthesizedFromText !== speechText;
     const duration = msg.mediaData?.voiceDuration || Math.max(2, Math.ceil(speechText.length / 4));
