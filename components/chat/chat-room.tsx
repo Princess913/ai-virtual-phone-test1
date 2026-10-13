@@ -19,7 +19,8 @@ import { formatOfflineTurnXml as formatOfflineTurnXmlShared, buildOfflinePromptH
 import { getStatusRegionConfig, isCustomStatusRegionActive } from "@/lib/chat-status-region";
 import { CustomStatusFrame } from "@/components/chat/custom-status-frame";
 import { sendBrowserNotification } from "@/lib/browser-notification";
-import { dispatchChatMessageNotice } from "@/lib/chat-notification-events";
+import { dispatchChatMessageNotice, CHAT_JUMP_TO_MESSAGE_EVENT, type ChatJumpToMessageDetail } from "@/lib/chat-notification-events";
+import { addChatFavorite, isChatMessageFavorited, removeChatFavorite } from "@/lib/chat-favorites-storage";
 import { shouldSendChatInputOnEnter } from "@/lib/chat-input-keyboard";
 import { useChatBottomReserve } from "./use-chat-bottom-reserve";
 import ReactMarkdown from "react-markdown";
@@ -2098,6 +2099,43 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         window.addEventListener("ai-call-trigger", handler);
         return () => window.removeEventListener("ai-call-trigger", handler);
     }, [session.id]);
+
+    // 外部（如收藏夹）请求跳转定位指定消息
+    useEffect(() => {
+        const handleJump = (e: Event) => {
+            const detail = (e as CustomEvent<ChatJumpToMessageDetail>).detail;
+            if (!detail || detail.sessionId !== session.id || !detail.messageId) return;
+            const targetId = detail.messageId;
+            const storedAll = loadChatMessages(session.id);
+            const targetIndex = storedAll.findIndex(m => m.id === targetId);
+            if (targetIndex === -1) return;
+
+            // 检查目标消息是否已经在当前可见消息列表中
+            const alreadyLoaded = messages.some(m => m.id === targetId);
+            if (!alreadyLoaded) {
+                // 需要扩大可见切片，保证包含 targetId
+                const neededCount = storedAll.length - targetIndex;
+                const nextCount = Math.max(messages.length + 50, neededCount + 20);
+                const sliced = storedAll.slice(-Math.min(storedAll.length, nextCount));
+                visibleMessagesRef.current = sliced;
+                setMessages(sliced);
+                setHasMore(sliced.length < storedAll.length);
+                hasMoreRef.current = sliced.length < storedAll.length;
+            }
+
+            pendingSearchJumpRef.current = { messageId: targetId };
+            requestAnimationFrame(() => {
+                const el = scrollRef.current;
+                const target = document.getElementById(`message-${targetId}`);
+                if (el && target) {
+                    scrollElementWithinContainer(el, target, { behavior: "smooth", block: "center" });
+                    flashMessageHighlight(targetId);
+                }
+            });
+        };
+        window.addEventListener(CHAT_JUMP_TO_MESSAGE_EVENT, handleJump);
+        return () => window.removeEventListener(CHAT_JUMP_TO_MESSAGE_EVENT, handleJump);
+    }, [session.id, messages, flashMessageHighlight]);
 
     // Helper: handle AI accepting/declining user's red packet or transfer
     const buildAssistantActionEditMeta = (rawResponseText: string) => ({
@@ -4919,6 +4957,28 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     )}
                 </div>
                 <div className="flex">
+                    <button onClick={() => {
+                        const favItem = {
+                            messageId: storedMessageId,
+                            sessionId: session.id,
+                            role: m.role,
+                            content: m.content,
+                            mediaType: m.mediaType,
+                            mediaData: m.mediaData as Record<string, unknown> | undefined,
+                            characterId: session.isGroup ? m.senderCharacterId : session.contactId,
+                            senderName: m.role === "user" ? (userIdentity?.name || "我") : (m.senderName || character?.name || "对方"),
+                            createdAt: m.createdAt,
+                        };
+                        const isFav = isChatMessageFavorited(storedMessageId);
+                        if (isFav) {
+                            removeChatFavorite(storedMessageId);
+                            showChatToast("已取消收藏");
+                        } else {
+                            addChatFavorite(favItem);
+                            showChatToast("已添加收藏");
+                        }
+                        setActiveMessageId(null);
+                    }} className="ctx-menu-btn">{isChatMessageFavorited(storedMessageId) ? "取消收藏" : "收藏"}</button>
                     <button onClick={() => { setQuotingMessage(m); setActiveMessageId(null); }} className="ctx-menu-btn">引用</button>
                     {options?.allowMultiSelect !== false && (
                         <button onClick={() => startMultiSelectFromMessage(m)} className="ctx-menu-btn">多选</button>
