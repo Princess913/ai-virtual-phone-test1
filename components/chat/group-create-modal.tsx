@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getActiveWorldMemberSet } from "@/lib/character-world-storage";
 import { loadChatContacts } from "@/lib/chat-storage";
 import { loadCharacters } from "@/lib/character-storage";
 import { resolveUserIdentity } from "@/lib/settings-storage";
@@ -19,7 +20,8 @@ export function GroupCreateModal({ onClose, onCreate }: GroupCreateModalProps) {
     const [groupName, setGroupName] = useState("");
     const [isSpectator, setIsSpectator] = useState(false);
 
-    const contacts = loadChatContacts();
+    const worldMembers = getActiveWorldMemberSet();
+    const contacts = loadChatContacts().filter(c => !worldMembers || worldMembers.has(c.characterId));
     const chars = loadCharacters();
 
     const enriched = contacts

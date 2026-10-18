@@ -9,12 +9,20 @@ import { Character } from "@/lib/character-types";
 import { loadMomentPosts } from "@/lib/moments-storage";
 import {
     getPendingFriendRequests,
+    getAutoAcceptDays,
+    setAutoAcceptDays,
     clearRequestsForCharacter,
     updateFriendRequestStatus,
     dispatchFriendRequestUpdated,
     type FriendRequest,
 } from "@/lib/friend-request-storage";
-import { handleAcceptFriendRequest, triggerRejectReaction } from "@/lib/friend-request-engine";
+import { loadCharacterWorldGroups, getActiveChatWorldId, setActiveChatWorldId, getActiveWorldMemberSet } from "@/lib/character-world-storage";
+import {
+    handleAcceptFriendRequest,
+    triggerRejectReaction,
+    acceptAllPendingFriendRequests,
+    autoAcceptStaleFriendRequests,
+} from "@/lib/friend-request-engine";
 import { PageShell } from "@/components/ui/page-shell";
 import { pinyin } from "pinyin-pro";
 import { kvSet } from "@/lib/kv-db";
@@ -47,6 +55,10 @@ export function ChatContactsList({ onCloseApp, onSelectSession, onSelectMascot, 
     const [showRequestList, setShowRequestList] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<FriendRequest | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [confirmAcceptAll, setConfirmAcceptAll] = useState(false);
+    const [activeWorldId, setActiveWorldId] = useState<string>(() => getActiveChatWorldId());
+    const [worldGroups, setWorldGroups] = useState<ReturnType<typeof loadCharacterWorldGroups>>([]);
+    const [autoDays, setAutoDays] = useState<number>(() => getAutoAcceptDays());
     const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
     const [addQuery, setAddQuery] = useState("");
     const [addResult, setAddResult] = useState<Character | null | undefined>(undefined);
@@ -101,11 +113,18 @@ export function ChatContactsList({ onCloseApp, onSelectSession, onSelectMascot, 
     }
 
     const refresh = useCallback(() => {
+        // 保底：超时未处理的好友申请自动通过（完成后会派发事件再刷新一次）
+        autoAcceptStaleFriendRequests().catch(() => {});
+        // 世界隔离：只显示当前世界的联系人与好友申请
+        const worldMembers = getActiveWorldMemberSet();
+        setActiveWorldId(getActiveChatWorldId());
+        setWorldGroups(loadCharacterWorldGroups());
         const rawContacts = loadChatContacts();
         const enriched = rawContacts.map(c => ({
             ...c,
             char: chars.find(ch => ch.id === c.characterId)
-        })).filter(c => c.char);
+        })).filter(c => c.char)
+          .filter(c => !worldMembers || worldMembers.has(c.characterId));
         enriched.sort((a, b) => (a.char?.name || "").localeCompare(b.char?.name || ""));
         setContacts(enriched);
 
@@ -116,7 +135,9 @@ export function ChatContactsList({ onCloseApp, onSelectSession, onSelectMascot, 
         }
         setLatestPost(map);
 
-        setPendingRequests(getPendingFriendRequests());
+        setPendingRequests(
+            getPendingFriendRequests().filter(r => !worldMembers || worldMembers.has(r.characterId))
+        );
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -124,7 +145,11 @@ export function ChatContactsList({ onCloseApp, onSelectSession, onSelectMascot, 
         refresh();
         const handler = () => refresh();
         window.addEventListener("friend-requests-updated", handler);
-        return () => window.removeEventListener("friend-requests-updated", handler);
+        window.addEventListener("chat-world-changed", handler);
+        return () => {
+            window.removeEventListener("friend-requests-updated", handler);
+            window.removeEventListener("chat-world-changed", handler);
+        };
     }, [refresh]);
 
     /** Group contacts by pinyin initial */
@@ -158,6 +183,22 @@ export function ChatContactsList({ onCloseApp, onSelectSession, onSelectMascot, 
             onSelectSession(session);
         } catch (err) {
             console.warn("[Contacts] Accept friend request failed:", err);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleAcceptAll = async () => {
+        if (!confirmAcceptAll) {
+            setConfirmAcceptAll(true);
+            return;
+        }
+        setIsProcessing(true);
+        try {
+            await acceptAllPendingFriendRequests(pendingRequests.map(r => r.characterId));
+            setConfirmAcceptAll(false);
+            setShowRequestList(false);
+            refresh();
         } finally {
             setIsProcessing(false);
         }
@@ -209,6 +250,19 @@ export function ChatContactsList({ onCloseApp, onSelectSession, onSelectMascot, 
                 <div className="pt-5 pb-1">
                     <div className="flex items-center justify-between mb-4 mt-2">
                         <span className="ts-28 font-bold text-[var(--c-text-title)]">Contacts</span>
+                        {worldGroups.length > 1 && (
+                            <select
+                                className="bg-[var(--c-input)] text-[var(--c-text)] text-xs rounded-md px-2 py-1 outline-none appearance-none"
+                                style={{ minWidth: "80px", textAlign: "center" }}
+                                value={activeWorldId}
+                                onChange={(e) => setActiveChatWorldId(e.target.value)}
+                            >
+                                <option value="all">所有世界</option>
+                                {worldGroups.map(g => (
+                                    <option key={g.id} value={g.id}>{g.name}</option>
+                                ))}
+                            </select>
+                        )}
                     </div>
                     <div className="chat-search-bar">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--c-icon)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -328,6 +382,19 @@ export function ChatContactsList({ onCloseApp, onSelectSession, onSelectMascot, 
                         <div className="ts-17 font-semibold text-center text-[var(--c-text-title)]">
                             新的朋友
                         </div>
+                        {pendingRequests.length > 1 && (
+                            <button
+                                onClick={handleAcceptAll}
+                                disabled={isProcessing}
+                                className="ui-btn ui-btn-success w-full"
+                            >
+                                {isProcessing
+                                    ? "处理中..."
+                                    : confirmAcceptAll
+                                        ? `再点一次，确认全部通过（${pendingRequests.length}人）`
+                                        : `全部同意（${pendingRequests.length}人）`}
+                            </button>
+                        )}
                         {pendingRequests.length === 0 ? (
                             <div className="py-6 text-center text-[var(--c-text)] ts-14">
                                 暂无好友申请
@@ -364,8 +431,26 @@ export function ChatContactsList({ onCloseApp, onSelectSession, onSelectMascot, 
                                 })}
                             </div>
                         )}
+                        <div className="ts-12 text-[var(--c-text)] flex items-center justify-between gap-2">
+                            <span>超过多久没处理，自动通过</span>
+                            <select
+                                value={autoDays}
+                                onChange={e => {
+                                    const n = Number(e.target.value);
+                                    setAutoDays(n);
+                                    setAutoAcceptDays(n);
+                                }}
+                                style={{ padding: "2px 6px", borderRadius: 6, border: "1px solid var(--c-border, #ddd)", background: "transparent", color: "inherit" }}
+                            >
+                                <option value={0}>关闭</option>
+                                <option value={1}>1天</option>
+                                <option value={3}>3天</option>
+                                <option value={7}>7天</option>
+                                <option value={14}>14天</option>
+                            </select>
+                        </div>
                         <button
-                            onClick={() => setShowRequestList(false)}
+                            onClick={() => { setConfirmAcceptAll(false); setShowRequestList(false); }}
                             className="ui-btn ui-btn-ghost w-full"
                         >
                             关闭
