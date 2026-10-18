@@ -5129,16 +5129,45 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return "displaySourceId" in msg && msg.displaySourceId ? msg.displaySourceId : msg.id;
     };
 
+    const handleTapbackReaction = (messageId: string, emoji: string) => {
+        const userN = userIdentity?.name || "你";
+        const { toggleMessageReaction } = require("@/lib/chat-storage");
+        const updated = toggleMessageReaction(messageId, emoji, "user", userN);
+        if (updated) {
+            setMessages(prev => prev.map(msg => msg.id === messageId ? updated : msg));
+        }
+        setActiveMessageId(null);
+    };
+
     /** Reusable context menu for user/assistant bubbles */
     const renderBubbleContextMenu = (m: ChatMessage, options?: { allowMultiSelect?: boolean }) => {
         const storedMessageId = getStoredActionMessageId(m);
+        const userReaction = m.reactions?.find(r => r.senderId === "user")?.emoji;
+        const tapbackIcons = ["❤️", "👍", "👎", "😂", "‼️", "❓"];
+
         const menu = (
             <div
                 onPointerDown={e => e.stopPropagation()}
                 ref={positionFloatingContextMenu}
                 style={getContextMenuInitialStyle()}
-                className="ctx-menu chat-floating-ctx-menu flex flex-col items-center gap-[6px] py-[4px] px-0"
+                className="ctx-menu chat-floating-ctx-menu flex flex-col items-center gap-[8px] py-[6px] px-0"
                 data-role={m.role}>
+                {/* iMessage Tapback 经典表情反应栏 */}
+                <div className="imessage-tapback-bar flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[rgba(255,255,255,0.85)] dark:bg-[rgba(50,50,55,0.85)] backdrop-blur-xl border border-white/20 shadow-md">
+                    {tapbackIcons.map(emoji => (
+                        <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => handleTapbackReaction(storedMessageId, emoji)}
+                            className={`w-[32px] h-[32px] rounded-full flex items-center justify-center ts-18 transition-all hover:scale-125 active:scale-95 ${
+                                userReaction === emoji ? "bg-[var(--c-icon-active)]/20 scale-110 shadow-sm" : ""
+                            }`}
+                            title={emoji}
+                        >
+                            {emoji}
+                        </button>
+                    ))}
+                </div>
                 <div className="flex">
                     <button onClick={() => {
                         const text = m.content;
@@ -6326,6 +6355,21 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onActionSelect={(text) => chatTextInputRef.current?.appendText(text)}
                                                 defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
                                             />
+
+                                            {/* iMessage Tapback 贴附在气泡边缘的表情徽章 */}
+                                            {renderMsg.reactions && renderMsg.reactions.length > 0 && (
+                                                <div
+                                                    className={`imessage-tapback-badge absolute -top-3.5 z-10 flex items-center -space-x-1 px-1.5 py-0.5 rounded-full bg-[rgba(255,255,255,0.92)] dark:bg-[rgba(55,55,60,0.92)] backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.12)] border border-black/5 dark:border-white/10 ${
+                                                        msg.role === "user" ? "-left-2" : "-right-2"
+                                                    }`}
+                                                >
+                                                    {renderMsg.reactions.map((r, i) => (
+                                                        <span key={`${r.senderId}-${i}`} className="ts-14 select-none leading-none scale-105" title={`${r.senderName || "对方"}: ${r.emoji}`}>
+                                                            {r.emoji}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                         </div>}
                                         {msg.role !== "user" && !isSilentThought && !isEmptyBubble && hasFoldedPanel && (
