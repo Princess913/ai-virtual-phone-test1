@@ -7348,9 +7348,13 @@
   }
 }
 
-/* ── 隐藏普通角色聊天室中被胶囊取代的旧辅助按钮行（小卷专属面板排除在外，保留发送等操作） ── */
-.chat-room-wrapper:not(.mascot-room-wrapper) .chat-input-actions {
+/* ── 隐藏普通角色聊天室中被胶囊取代的旧辅助按钮行（小卷专属面板 .mascot-chat-session 严格排除并强制显示） ── */
+.chat-room-wrapper:not(.mascot-chat-session) .chat-input-actions {
   display: none !important;
+}
+
+.mascot-chat-session .chat-input-actions {
+  display: flex !important;
 }
 
 /* ── iMessage 风格长按上下文菜单与 Tapback 胶囊 ── */
