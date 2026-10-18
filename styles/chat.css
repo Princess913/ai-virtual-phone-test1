@@ -7348,8 +7348,8 @@
   }
 }
 
-/* ── 隐藏输入栏下方原本的辅助按钮行，让输入胶囊直接居中贴底 ── */
-.chat-room-wrapper .chat-input-actions {
+/* ── 隐藏普通角色聊天室中被胶囊取代的旧辅助按钮行（小卷专属面板排除在外，保留发送等操作） ── */
+.chat-room-wrapper:not(.mascot-room-wrapper) .chat-input-actions {
   display: none !important;
 }
 
