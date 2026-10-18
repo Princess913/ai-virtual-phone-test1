@@ -5179,6 +5179,23 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 style={getContextMenuInitialStyle()}
                 className="chat-floating-ctx-menu flex flex-col items-center gap-[8px]"
                 data-role={m.role}>
+                {/* iMessage 顶置 Tapback 胶囊栏 */}
+                <div className="imessage-tapback-bar flex items-center">
+                    {tapbackIcons.map(emoji => (
+                        <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => handleTapbackReaction(storedMessageId, emoji)}
+                            className={`w-[34px] h-[34px] rounded-full flex items-center justify-center ts-18 transition-all hover:scale-125 active:scale-95 ${
+                                userReaction === emoji ? "bg-[var(--c-icon-active)]/20 scale-110 shadow-sm" : ""
+                            }`}
+                            title={emoji}
+                        >
+                            {emoji}
+                        </button>
+                    ))}
+                </div>
+
                 {/* iMessage 原生高斯模糊圆角操作卡片 */}
                 <div className="imessage-actions-card flex flex-col">
                     <button onClick={() => {
@@ -5230,7 +5247,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
                     {m.role === "assistant" && (
                         <button onClick={() => handleRetry(storedMessageId)} className="imessage-action-item is-danger">
-                            <span>重试以下</span>
+                            <span>重新生成</span>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
                         </button>
                     )}
@@ -5271,11 +5288,6 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     <button onClick={() => handleDeleteMessage(storedMessageId)} className="imessage-action-item is-danger">
                         <span>删除</span>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    </button>
-
-                    <button onClick={() => handleDeleteMessagesFrom(storedMessageId)} className="imessage-action-item is-danger">
-                        <span>删除以下</span>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
                     </button>
                 </div>
                 {(() => {
@@ -6429,18 +6441,34 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                     </>
                                 )}
                             </div>
-                            {/* Voice message: text transcription bubble */}
+                            {/* Voice message: text transcription bubble (iMessage 毛玻璃贴附气泡 + 一键收起) */}
                             {renderMsg.mediaType === "audio" && voiceTextIds.has(msg.id) && renderMsg.mediaData?.label && (
-                                <div className={`chat-msg-wrapper`} data-role={uiRole(msg)} style={{ marginTop: -12 }}>
-                                    {msg.role !== "user" && <div className="w-[40px] shrink-0" />}
-                                    <div className="voice-msg-text-bubble">
-                                        <BilingualTextBlock
-                                            text={msg.displayProjected ? (renderMsg.mediaData?.label || "") : renderDisplayText(renderMsg.mediaData?.label || "", msg.role === "user" ? 1 : 2, false)}
-                                            mode="markdown"
-                                            defaultExpanded={session.collapseBilingualTranslation !== false ? false : true}
-                                        />
+                                <div className="chat-msg-wrapper" data-role={uiRole(msg)} style={{ marginTop: -4 }}>
+                                    <div className={`chat-msg-content-wrap flex flex-col min-w-0 max-w-[76%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                                        <div className="imessage-voice-transcript-bubble relative group select-none">
+                                            <BilingualTextBlock
+                                                text={msg.displayProjected ? (renderMsg.mediaData?.label || "") : renderDisplayText(renderMsg.mediaData?.label || "", msg.role === "user" ? 1 : 2, false)}
+                                                mode="markdown"
+                                                defaultExpanded={session.collapseBilingualTranslation !== false ? false : true}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setVoiceTextIds(prev => {
+                                                        const next = new Set(prev);
+                                                        next.delete(msg.id);
+                                                        return next;
+                                                    });
+                                                }}
+                                                className="imessage-voice-transcript-close absolute -top-2 -right-2 w-[20px] h-[20px] rounded-full bg-black/40 text-white flex items-center justify-center ts-12 shadow-sm hover:scale-110 active:scale-90 transition-transform cursor-pointer"
+                                                title="收起文字"
+                                                aria-label="收起文字"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
                                     </div>
-                                    {msg.role === "user" && <div className="w-[40px] shrink-0" />}
                                 </div>
                             )}
                             {/* 状态栏：一律裸渲染，不套便利贴外框（自定义模式下交给用户的渲染代码，
