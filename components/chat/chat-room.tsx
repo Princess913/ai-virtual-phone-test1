@@ -951,8 +951,8 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     )}
                 </button>
 
-                {/* 存在输入内容时，显示向上的 iOS 亮蓝圆形发送箭头 */}
-                {inputText.trim() && (
+                {/* 存在输入内容时显示发送箭头，无内容时显示触发 AI 回复闪烁魔法棒图标 */}
+                {inputText.trim() ? (
                     <button
                         type="button"
                         onClick={handleSubmit}
@@ -963,6 +963,34 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                             <line x1="12" y1="19" x2="12" y2="5" />
                             <polyline points="5 12 12 5 19 12" />
                         </svg>
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (isGenerating) {
+                                onStopGeneration();
+                            } else {
+                                onTriggerAIResponse();
+                            }
+                            onClosePanels();
+                        }}
+                        disabled={inputLocked}
+                        className="w-[30px] h-[30px] rounded-full flex items-center justify-center text-[var(--c-icon)] hover:text-[var(--c-icon-active)] transition-colors shrink-0"
+                        aria-label={isGenerating ? "停止生成" : "触发对方回复"}
+                        title={isGenerating ? "停止生成" : "触发对方回复"}
+                    >
+                        {isGenerating ? (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <rect x="9" y="9" width="6" height="6" rx="1" />
+                            </svg>
+                        ) : (
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+                                <path d="M20 3v4" /><path d="M22 5h-4" />
+                            </svg>
+                        )}
                     </button>
                 )}
             </div>
@@ -5129,45 +5157,16 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return "displaySourceId" in msg && msg.displaySourceId ? msg.displaySourceId : msg.id;
     };
 
-    const handleTapbackReaction = (messageId: string, emoji: string) => {
-        const userN = userIdentity?.name || "你";
-        const { toggleMessageReaction } = require("@/lib/chat-storage");
-        const updated = toggleMessageReaction(messageId, emoji, "user", userN);
-        if (updated) {
-            setMessages(prev => prev.map(msg => msg.id === messageId ? updated : msg));
-        }
-        setActiveMessageId(null);
-    };
-
     /** Reusable context menu for user/assistant bubbles */
     const renderBubbleContextMenu = (m: ChatMessage, options?: { allowMultiSelect?: boolean }) => {
         const storedMessageId = getStoredActionMessageId(m);
-        const userReaction = m.reactions?.find(r => r.senderId === "user")?.emoji;
-        const tapbackIcons = ["❤️", "👍", "👎", "😂", "‼️", "❓"];
-
         const menu = (
             <div
                 onPointerDown={e => e.stopPropagation()}
                 ref={positionFloatingContextMenu}
                 style={getContextMenuInitialStyle()}
-                className="ctx-menu chat-floating-ctx-menu flex flex-col items-center gap-[8px] py-[6px] px-0"
+                className="ctx-menu chat-floating-ctx-menu flex flex-col items-center gap-[6px] py-[4px] px-0"
                 data-role={m.role}>
-                {/* iMessage Tapback 经典表情反应栏 */}
-                <div className="imessage-tapback-bar flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[rgba(255,255,255,0.85)] dark:bg-[rgba(50,50,55,0.85)] backdrop-blur-xl border border-white/20 shadow-md">
-                    {tapbackIcons.map(emoji => (
-                        <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => handleTapbackReaction(storedMessageId, emoji)}
-                            className={`w-[32px] h-[32px] rounded-full flex items-center justify-center ts-18 transition-all hover:scale-125 active:scale-95 ${
-                                userReaction === emoji ? "bg-[var(--c-icon-active)]/20 scale-110 shadow-sm" : ""
-                            }`}
-                            title={emoji}
-                        >
-                            {emoji}
-                        </button>
-                    ))}
-                </div>
                 <div className="flex">
                     <button onClick={() => {
                         const text = m.content;
@@ -6355,21 +6354,6 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onActionSelect={(text) => chatTextInputRef.current?.appendText(text)}
                                                 defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
                                             />
-
-                                            {/* iMessage Tapback 贴附在气泡边缘的表情徽章 */}
-                                            {renderMsg.reactions && renderMsg.reactions.length > 0 && (
-                                                <div
-                                                    className={`imessage-tapback-badge absolute -top-3.5 z-10 flex items-center -space-x-1 px-1.5 py-0.5 rounded-full bg-[rgba(255,255,255,0.92)] dark:bg-[rgba(55,55,60,0.92)] backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.12)] border border-black/5 dark:border-white/10 ${
-                                                        msg.role === "user" ? "-left-2" : "-right-2"
-                                                    }`}
-                                                >
-                                                    {renderMsg.reactions.map((r, i) => (
-                                                        <span key={`${r.senderId}-${i}`} className="ts-14 select-none leading-none scale-105" title={`${r.senderName || "对方"}: ${r.emoji}`}>
-                                                            {r.emoji}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
                                         </div>
                                         </div>}
                                         {msg.role !== "user" && !isSilentThought && !isEmptyBubble && hasFoldedPanel && (
