@@ -40,6 +40,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>
+        <div className="remove-blur" aria-hidden="true" />
         <PWAManifestInjector />
         <PWARegistrar />
         <CSSImportEnhancer />
