@@ -44,3 +44,17 @@
   --font-size-lg: 17px;  --font-size-xl: 20px;
   --font-size-2xl: 24px; --font-size-3xl: 30px;
 }
+/* Experimental iOS PWA top blur fix */
+@media (display-mode: standalone) {
+  .remove-blur {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 11px;
+    pointer-events: none;
+    background-color: #ffffff;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
